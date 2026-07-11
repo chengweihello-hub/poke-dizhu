@@ -45,7 +45,10 @@ body{
   font-size:26px;background:linear-gradient(145deg,#5a4a3a,#2c2018);border:2px solid rgba(255,255,255,.2);
   position:relative;
 }
-.avatar.landlord::after{content:"主";position:absolute;top:-6px;right:-6px;background:var(--gold2);color:#3a1d00;font-size:11px;font-weight:800;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;border:1px solid #fff5;}
+.avatar.landlord{border-color:var(--gold);box-shadow:0 0 14px rgba(255,213,74,.7),0 0 0 2px var(--gold);}
+.avatar.landlord::after{content:"主";position:absolute;top:-6px;right:-6px;background:var(--gold2);color:#3a1d00;font-size:11px;font-weight:800;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;border:1px solid #fff5;z-index:3;}
+.avatar.landlord::before{content:"👑";position:absolute;top:-15px;left:50%;transform:translateX(-50%);font-size:19px;z-index:3;filter:drop-shadow(0 1px 2px rgba(0,0,0,.6));animation:crownFloat 2s ease-in-out infinite;}
+@keyframes crownFloat{50%{transform:translateX(-50%) translateY(-3px);}}
 .player-card .name{font-size:13px;color:#e8f5ec;font-weight:600;}
 .player-card .meta{font-size:11px;color:#9fcbb1;}
 .count-badge{background:rgba(255,213,74,.18);color:var(--gold);border:1px solid var(--gold);border-radius:10px;padding:1px 8px;font-size:12px;font-weight:700;}
@@ -187,13 +190,35 @@ body{
 .plane-fly{position:absolute;top:50%;left:-100px;font-size:60px;animation:fly 1.4s linear forwards;z-index:31;}
 @keyframes fly{0%{left:-120px;transform:translateY(-50%) rotate(8deg);}100%{left:110%;transform:translateY(-50%) rotate(8deg);}}
 
-/* 出牌飞入 */
+/* 出牌飞入(按来源方向) */
 .played-in{animation:playedIn .25s ease-out;}
 @keyframes playedIn{0%{transform:translateY(40px) scale(.7);opacity:0;}100%{transform:translateY(0) scale(1);opacity:1;}}
+.played-in.from-0{animation:flyUp .34s cubic-bezier(.2,.7,.3,1);}
+@keyframes flyUp{0%{transform:translateY(160px) scale(.6);opacity:0;}100%{transform:translateY(0) scale(1);opacity:1;}}
+.played-in.from-1{animation:flyFromRight .34s cubic-bezier(.2,.7,.3,1);}
+@keyframes flyFromRight{0%{transform:translate(190px,-100px) scale(.6);opacity:0;}100%{transform:translate(0,0) scale(1);opacity:1;}}
+.played-in.from-2{animation:flyFromLeft .34s cubic-bezier(.2,.7,.3,1);}
+@keyframes flyFromLeft{0%{transform:translate(-190px,-100px) scale(.6);opacity:0;}100%{transform:translate(0,0) scale(1);opacity:1;}}
 
 /* 顺子流光 */
 .straight-glow .card{animation:sglow 1.2s ease-out;}
 @keyframes sglow{0%{box-shadow:0 0 0 rgba(157,255,90,0);}40%{box-shadow:0 0 14px rgba(157,255,90,.9);}100%{box-shadow:0 2px 5px rgba(0,0,0,.35);}}
+
+/* 倍数弹跳 */
+#multiplier{display:inline-block;}
+#multiplier.bump{animation:bump .65s ease-out;}
+@keyframes bump{0%{transform:scale(1);}30%{transform:scale(1.9);color:#ff7a2a;text-shadow:0 0 14px var(--gold);}100%{transform:scale(1);}}
+/* 玩家地主标识 */
+#roleStat.landlord{color:var(--gold);font-weight:800;}
+#roleStat.landlord::before{content:"👑 ";}
+/* 出牌历史 */
+.history-panel{position:fixed;left:8px;bottom:8px;width:124px;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:6px 9px;font-size:11px;color:#cfe8d8;z-index:8;pointer-events:none;backdrop-filter:blur(2px);}
+.history-panel:empty{display:none;}
+.history-panel .hitem{padding:3px 0;border-bottom:1px solid rgba(255,255,255,.07);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.history-panel .hitem:last-child{border-bottom:none;}
+.history-panel .hitem b{color:var(--gold);margin-right:2px;}
+.history-panel .hpass{color:#9fcbb1;}
+.history-panel .hitem:first-child{color:#fff;font-weight:600;}
 
 @media (max-width:900px){
   :root{--card-w:46px;--card-h:66px;}
@@ -268,6 +293,7 @@ body{
   <div class="actions" id="actions"></div>
 </div>
 
+<div id="historyPanel" class="history-panel"></div>
 <div class="fx-layer" id="fxLayer"></div>
 
 <script>
@@ -283,7 +309,7 @@ const STATE = {
   landlord:-1, current:0, lastPlay:null, // {cards,type,by}
   passCount:0, phase:'idle', // idle/bidding/playing/over
   baseScore:1, multiplier:1, round:0, soundOn:true,
-  selected:new Set(), passers:new Set(),
+  selected:new Set(), passers:new Set(), history:[],
 };
 
 const seatName = ['你','上家·阿喵','下家·老王']; // seat 0,1,2
@@ -786,7 +812,7 @@ function renderPlayArea(){
 }
 function showCardsInZone(seat, cards){
   const zone = zoneOf(seat); zone.innerHTML='';
-  const wrap = document.createElement('div'); wrap.style.display='flex'; wrap.style.alignItems='center'; wrap.classList.add('played-in');
+  const wrap = document.createElement('div'); wrap.style.display='flex'; wrap.style.alignItems='center'; wrap.classList.add('played-in','from-'+seat);
   const sorted = sortHand([...cards]);
   sorted.forEach((c,i)=>{
     const e = cardEl(c);
@@ -839,6 +865,7 @@ function updateInfo(){
   else if(STATE.landlord===-1) role='等待中'; else role='农民';
   if(STATE.phase==='over') role = STATE.landlord===0? '地主':'农民';
   $('roleStat').textContent = role;
+  $('roleStat').classList.toggle('landlord', STATE.landlord===0);
 }
 
 /* ===================== 玩家操作 ===================== */
@@ -919,11 +946,18 @@ function doPlay(seat, cards, type){
   playTypeFX(type, cards);
 
   // 倍数: 炸弹/王炸翻倍
-  if(type.type==='bomb'){ STATE.multiplier*=2; SFX.bomb(); }
-  else if(type.type==='rocket'){ STATE.multiplier*=2; SFX.rocket(); }
-  else SFX.play();
+  let bumped=false;
+  if(type.type==='bomb'){ STATE.multiplier*=2; SFX.bomb(); bumped=true; }
+  else if(type.type==='rocket'){ STATE.multiplier*=2; SFX.rocket(); bumped=true; }
+  else { SFX.play(); vibrate(12); }
 
-  updateInfo(); renderAiBack();
+  updateInfo();
+  if(bumped) bumpMultiplier();
+  renderAiBack();
+  // 历史记录
+  STATE.history.push({seat, type, pass:false});
+  if(STATE.history.length>8) STATE.history.shift();
+  renderHistory();
 
   // 判断胜负
   if(STATE.hands[seat].length===0){
@@ -937,6 +971,9 @@ function doPass(seat){
   STATE.passCount++;
   SFX.pass();
   renderPlayArea();
+  STATE.history.push({seat, pass:true});
+  if(STATE.history.length>8) STATE.history.shift();
+  renderHistory();
   // 两人都过 -> 回到出牌者重新起牌
   if(STATE.passCount>=2){
     STATE.lastPlay = null;
@@ -987,26 +1024,29 @@ function playTypeFX(type, cards){
     if(type.type==='bomb'){
       document.body.classList.add('shake');
       spawnParticles(28, '#ff7a2a');
+      vibrate([40,30,80]);
       setTimeout(()=>document.body.classList.remove('shake'), 500);
     }
     if(type.type==='rocket'){
       const fl = document.createElement('div'); fl.className='flash'; fx.appendChild(fl);
       document.body.classList.add('shake');
       spawnParticles(40, '#ffd54a');
+      vibrate([60,40,60,40,120]);
       setTimeout(()=>{document.body.classList.remove('shake'); fl.remove();}, 600);
     }
     if(type.type.startsWith('plane')){
       const plane = document.createElement('div'); plane.className='plane-fly'; plane.textContent='✈️';
       fx.appendChild(plane); setTimeout(()=>plane.remove(), 1400);
       spawnParticles(20, '#6fe3ff');
+      vibrate([30,20,40,20,60]);
     }
     if(type.type==='straight'){
       // 顺子流光
       const row = document.querySelector('.played-in');
       if(row) row.classList.add('straight-glow');
-      SFX.straight();
+      SFX.straight(); vibrate(20);
     }
-    if(type.type==='pairs'){ SFX.pairs(); spawnParticles(16,'#c08bff'); }
+    if(type.type==='pairs'){ SFX.pairs(); spawnParticles(16,'#c08bff'); vibrate([20,10,20]); }
     if(type.type.startsWith('plane')){ SFX.plane(); }
   } else if(type.type==='triple' || type.type==='triple_single' || type.type==='triple_pair'){
     SFX.triple();
@@ -1037,6 +1077,47 @@ function flashMsg(msg){
   t.textContent = msg;
   fx.appendChild(t);
   setTimeout(()=>t.remove(), 1100);
+}
+/* 触觉振动 */
+function vibrate(p){ if(typeof navigator!=='undefined' && navigator.vibrate){ try{ navigator.vibrate(p); }catch(e){} } }
+/* 倍数弹跳 */
+function bumpMultiplier(){
+  const el = $('multiplier');
+  if(!el) return;
+  el.classList.remove('bump');
+  void el.offsetWidth;
+  el.classList.add('bump');
+  setTimeout(()=>el.classList.remove('bump'), 650);
+}
+/* 出牌历史简写 */
+function shortLabel(t){
+  const r = v => VAL_NAME[v];
+  switch(t.type){
+    case 'single': return '单'+r(t.mainValue);
+    case 'pair': return '对'+r(t.mainValue);
+    case 'triple': return '三'+r(t.mainValue);
+    case 'triple_single': return '三带一';
+    case 'triple_pair': return '三带二';
+    case 'straight': return '顺子'+t.length;
+    case 'pairs': return '连对'+(t.length/2);
+    case 'plane': case 'plane_single': case 'plane_pair': return '飞机'+t.planeSize;
+    case 'bomb': return '💣炸弹'+r(t.mainValue);
+    case 'rocket': return '👑王炸';
+    case 'four_two': return '四带二';
+    case 'four_two_pair': return '四带两对';
+    default: return t.name||'出牌';
+  }
+}
+/* 渲染历史面板 */
+function renderHistory(){
+  const el = $('historyPanel');
+  if(!el) return;
+  const recent = STATE.history.slice(-3).reverse();
+  el.innerHTML = recent.map(h=>{
+    const name = h.seat===0?'你':h.seat===1?'上家':'下家';
+    const txt = h.pass ? '不要' : shortLabel(h.type);
+    return `<div class="hitem${h.pass?' hpass':''}"><b>${name}</b>${txt}</div>`;
+  }).join('');
 }
 
 /* ===================== 叫地主流程 ===================== */
@@ -1162,8 +1243,8 @@ function newGame(){
   STATE.bottom = [];
   STATE.landlord = -1; STATE.current = 0;
   STATE.lastPlay = null; STATE.passCount = 0;
-  STATE.selected.clear(); STATE.passers.clear(); STATE.multiplier = 1; hintCache={key:null,list:[],idx:0};
-  clearPlayed(); $('bottomCards').innerHTML='';
+  STATE.selected.clear(); STATE.passers.clear(); STATE.multiplier = 1; hintCache={key:null,list:[],idx:0}; STATE.history=[];
+  clearPlayed(); $('bottomCards').innerHTML=''; renderHistory();
   // 发牌: 每人17张, 留3张底牌
   for(let i=0;i<51;i++){ STATE.hands[i%3].push(STATE.deck[i]); }
   STATE.bottom = STATE.deck.slice(51,54);
